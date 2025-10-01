@@ -147,14 +147,24 @@ def save_config(config: dict) -> None:
     config_path.write_text(json.dumps(config, indent=2, sort_keys=True))
 
 
-def init_staging_repo(stage_path: Path, remote_url: str, branch: str) -> None:
+def init_staging_repo(
+    stage_path: Path,
+    remote_url: str,
+    local_branch: str,
+    remote_branch: Optional[str] = None,
+) -> None:
     stage_path.mkdir(parents=True, exist_ok=True)
     run_git(stage_path, ["init"], capture_output=False)
     run_git(stage_path, ["remote", "add", DEFAULT_REMOTE, remote_url])
-    run_git(stage_path, ["fetch", DEFAULT_REMOTE, branch], capture_output=False)
+    tracked_branch = remote_branch or local_branch
     run_git(
         stage_path,
-        ["checkout", "-B", branch, f"{DEFAULT_REMOTE}/{branch}"],
+        ["fetch", DEFAULT_REMOTE, tracked_branch],
+        capture_output=False,
+    )
+    run_git(
+        stage_path,
+        ["checkout", "-B", local_branch, f"{DEFAULT_REMOTE}/{tracked_branch}"],
         capture_output=False,
     )
 
@@ -209,22 +219,47 @@ def clone_project(args) -> None:
             fail("Refusing to remove the source project.")
         shutil.rmtree(target)
 
+    stage_rel = target.relative_to(staging_root)
+    temp_branch = args.temp_branch or make_temp_branch_name(stage_rel, branch)
+    existing_temp = run_git(
+        source,
+        ["ls-remote", "--heads", DEFAULT_REMOTE, temp_branch],
+    ).strip()
+    if existing_temp:
+        fail(
+            f"Temporary branch {temp_branch} already exists on {DEFAULT_REMOTE}. "
+            "Provide --temp-branch with a different name or delete it manually."
+        )
+
     print(
-        f"Initializing staging repository at {target} to track {remote_url} ({branch})."
+        f"Creating temporary remote branch {temp_branch} from {branch} in source project {source}."
     )
-    init_staging_repo(target, remote_url, branch)
+    run_git(
+        source,
+        ["push", DEFAULT_REMOTE, f"HEAD:refs/heads/{temp_branch}"],
+        capture_output=False,
+    )
+
+    print(
+        f"Initializing staging repository at {target} from remote branch {temp_branch} (based on {branch})."
+    )
+    init_staging_repo(target, remote_url, temp_branch, temp_branch)
 
     config = load_config()
     config.setdefault("projects", {})
-    config["projects"][str(Path(target).relative_to(staging_root))] = {
+    config["projects"][str(stage_rel)] = {
         "work_name": str(project_rel),
         "work_path": str(source),
         "staging_path": str(target),
-        "branch": branch,
+        "base_branch": branch,
+        "staging_branch": temp_branch,
+        "temp_branch": temp_branch,
         "remote": remote_url,
     }
     save_config(config)
-    print(f"Staging repository ready. Branch {branch} checked out from origin.")
+    print(
+        f"Staging repository ready. Local branch {temp_branch} tracks origin/{temp_branch} (branched from {branch})."
+    )
 
 
 def sync_back(args) -> None:
@@ -259,13 +294,30 @@ def sync_back(args) -> None:
     if not args.allow_dirty_work:
         ensure_clean(work_path, f"Work project {work_label}")
 
-    branch = args.branch
-    if not branch:
-        branch = get_current_branch(stage_path, f"Staging project {stage_rel}")
-    else:
-        branch_exists = run_git(stage_path, ["branch", "--list", branch]).strip()
+    staging_branch = get_current_branch(
+        stage_path, f"Staging project {stage_rel}"
+    )
+
+    stored_base_branch = entry.get("base_branch") if entry else None
+    recorded_temp_branch = entry.get("temp_branch") if entry else None
+
+    target_branch = args.branch or stored_base_branch or staging_branch
+
+    if args.branch and args.branch != staging_branch:
+        branch_exists = run_git(stage_path, ["branch", "--list", args.branch]).strip()
         if not branch_exists:
-            fail(f"Branch {branch} not found in staging repository.")
+            print(
+                f"Warning: staging repository does not have a local branch named {args.branch}. "
+                "Proceeding with the current HEAD instead.",
+                file=sys.stderr,
+            )
+
+    if args.temp_branch:
+        temp_branch = args.temp_branch
+    elif recorded_temp_branch:
+        temp_branch = recorded_temp_branch
+    else:
+        temp_branch = make_temp_branch_name(stage_rel, staging_branch)
 
     staging_remote_url = get_remote_url(stage_path)
     work_remote_url = get_remote_url(work_path)
@@ -275,10 +327,21 @@ def sync_back(args) -> None:
             f"\nWork:    {work_remote_url}\nStaging: {staging_remote_url}"
         )
 
-    temp_branch = args.temp_branch or make_temp_branch_name(stage_rel, branch)
+    if not recorded_temp_branch or args.temp_branch:
+        existing_temp = run_git(
+            stage_path,
+            ["ls-remote", "--heads", DEFAULT_REMOTE, temp_branch],
+        ).strip()
+        if existing_temp and not args.temp_branch and not recorded_temp_branch:
+            temp_branch = make_temp_branch_name(stage_rel, staging_branch)
+        elif existing_temp and args.temp_branch:
+            fail(
+                f"Temporary branch {temp_branch} already exists on {DEFAULT_REMOTE}. "
+                "Provide --temp-branch with a different name or delete it manually."
+            )
 
     print(
-        f"Pushing staging HEAD ({branch}) to temporary remote branch {temp_branch}"
+        f"Pushing staging HEAD ({staging_branch}) to temporary remote branch {temp_branch}"
     )
     run_git(
         stage_path,
@@ -292,58 +355,70 @@ def sync_back(args) -> None:
 
         branch_exists = True
         try:
-            run_git(work_path, ["rev-parse", "--verify", f"refs/heads/{branch}"])
+            run_git(work_path, ["rev-parse", "--verify", f"refs/heads/{target_branch}"])
         except subprocess.CalledProcessError:
             branch_exists = False
 
         if not branch_exists:
-            print(f"Creating local branch {branch} from origin/{temp_branch}")
+            print(f"Creating local branch {target_branch} from origin/{target_branch}")
             run_git(
                 work_path,
-                ["checkout", "-B", branch, f"{DEFAULT_REMOTE}/{temp_branch}"],
+                ["fetch", DEFAULT_REMOTE, target_branch],
+                capture_output=False,
+            )
+            run_git(
+                work_path,
+                ["checkout", "-B", target_branch, f"{DEFAULT_REMOTE}/{target_branch}"],
+                capture_output=False,
+            )
+
+        current_work_branch = get_current_branch(
+            work_path, f"Work project {work_label}"
+        )
+        if current_work_branch != target_branch:
+            if args.auto_checkout:
+                print(f"Checking out branch {target_branch} in work repository")
+                run_git(
+                    work_path, ["checkout", target_branch], capture_output=False
+                )
+            else:
+                fail(
+                    f"Work repository is on branch {current_work_branch}. "
+                    f"Use --auto-checkout to switch automatically or check out {target_branch} manually."
+                )
+
+        if args.force:
+            print(
+                f"Hard resetting work branch {target_branch} to origin/{temp_branch}"
+            )
+            run_git(
+                work_path,
+                ["reset", "--hard", f"{DEFAULT_REMOTE}/{temp_branch}"],
                 capture_output=False,
             )
         else:
-            current_work_branch = get_current_branch(work_path, f"Work project {work_label}")
-            if current_work_branch != branch:
-                if args.auto_checkout:
-                    print(f"Checking out branch {branch} in work repository")
-                    run_git(work_path, ["checkout", branch], capture_output=False)
-                else:
-                    fail(
-                        f"Work repository is on branch {current_work_branch}. "
-                        f"Use --auto-checkout to switch automatically or check out {branch} manually."
-                    )
-            if args.force:
-                print(f"Hard resetting work branch {branch} to origin/{temp_branch}")
-                run_git(
-                    work_path,
-                    ["reset", "--hard", f"{DEFAULT_REMOTE}/{temp_branch}"],
-                    capture_output=False,
+            merge_proc = subprocess.run(
+                [
+                    "git",
+                    "-C",
+                    str(work_path),
+                    "merge",
+                    "--ff-only",
+                    f"{DEFAULT_REMOTE}/{temp_branch}",
+                ],
+                text=True,
+                capture_output=True,
+            )
+            if merge_proc.returncode != 0:
+                fail(
+                    "Unable to fast-forward work branch to match temporary remote branch.\n"
+                    f"git merge output:\n{merge_proc.stdout}{merge_proc.stderr}"
                 )
-            else:
-                merge_proc = subprocess.run(
-                    [
-                        "git",
-                        "-C",
-                        str(work_path),
-                        "merge",
-                        "--ff-only",
-                        f"{DEFAULT_REMOTE}/{temp_branch}",
-                    ],
-                    text=True,
-                    capture_output=True,
-                )
-                if merge_proc.returncode != 0:
-                    fail(
-                        "Unable to fast-forward work branch to match temporary remote branch.\n"
-                        f"git merge output:\n{merge_proc.stdout}{merge_proc.stderr}"
-                    )
-                if merge_proc.stdout.strip():
-                    print(merge_proc.stdout.strip())
+            if merge_proc.stdout.strip():
+                print(merge_proc.stdout.strip())
 
-        print(f"Pushing updated branch {branch} back to origin")
-        run_git(work_path, ["push", DEFAULT_REMOTE, branch], capture_output=False)
+        print(f"Pushing updated branch {target_branch} back to origin")
+        run_git(work_path, ["push", DEFAULT_REMOTE, target_branch], capture_output=False)
     finally:
         print(f"Removing temporary remote branch {temp_branch}")
         try:
@@ -364,14 +439,17 @@ def sync_back(args) -> None:
         "work_name": work_label,
         "work_path": str(work_path),
         "staging_path": str(stage_path),
-        "branch": branch,
+        "branch": target_branch,
+        "base_branch": target_branch,
+        "staging_branch": staging_branch,
         "remote": staging_remote_url,
+        "temp_branch": temp_branch,
         "last_temp_branch": temp_branch,
     }
     config["projects"][str(stage_rel)] = config_entry
     save_config(config)
     print(
-        f"Sync complete. Work project {work_path} now contains origin/{branch} from staging."
+        f"Sync complete. Work project {work_path} now contains origin/{target_branch} from staging."
     )
 
 
@@ -429,6 +507,10 @@ def main() -> None:
     )
     clone_parser.add_argument(
         "--as-name", help="Name to use for the staging copy. Defaults to the project name."
+    )
+    clone_parser.add_argument(
+        "--temp-branch",
+        help="Temporary remote branch name to create for staging. Defaults to an auto-generated value."
     )
     clone_parser.add_argument(
         "--force", action="store_true", help="Replace existing staging directory if it exists."

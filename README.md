@@ -17,8 +17,9 @@ When you run `clone`, the script:
 
 1. Ensures the target project inside the work root exists, is clean, and is on a
    branch that also exists on the remote (default remote name is `origin`).
-2. Creates (or replaces with `--force`) a matching repository under the staging
-   root, adds the same remote, fetches the branch, and checks it out.
+2. Pushes the current HEAD to a uniquely named temporary remote branch and
+   bootstraps a matching repository under the staging root that tracks that
+   temporary branch.
 3. Records the mapping in `.staging_sync.json` so future syncs can find the
    right source and destination.
 
@@ -26,9 +27,10 @@ When you run `sync-back`, the script:
 
 1. Validates that both the staging copy and the work repository are clean
    unless you explicitly allow dirtiness.
-2. Pushes the staging HEAD to a temporary branch on the shared remote.
-3. Fast-forwards (or hard-resets with `--force`) the work repository's branch to
-   match the staging changes.
+2. Pushes the staging HEAD to a temporary branch on the shared remote (reusing
+   the one created during `clone` unless you override it).
+3. Fast-forwards (or hard-resets with `--force`) the original work branch that
+   the staging copy was based on (or a branch you specify with `--branch`).
 4. Pushes the updated branch back to the remote and cleans up the temporary
    branch.
 
@@ -71,7 +73,7 @@ python3 stage_sync.py --work-root /path/to/work list
 
 - `--allow-dirty-stage`, `--allow-dirty-work`: bypass clean working tree
   checks (use sparingly).
-- `--branch`: pick a different branch than the staging HEAD while syncing.
+- `--branch`: choose which work branch should receive the staged changes.
 - `--temp-branch`: override the generated temporary remote branch name.
 - `--auto-checkout`: switch the work repo to the target branch automatically
   if it is on a different branch.
@@ -82,8 +84,9 @@ python3 stage_sync.py --work-root /path/to/work list
 
 The script stores per-staging metadata in `.staging_sync.json` inside the
 staging root (or a custom path if you pass `--config-path`). You usually do not
-need to edit this file manually; it keeps track of the last used branch,
-staging/work paths, and the temporary branch name.
+need to edit this file manually; it keeps track of the work/staging paths, the
+base branch the staging copy was created from, and the temporary branch names
+used for the last sync.
 
 ## Tips
 
