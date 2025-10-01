@@ -185,7 +185,10 @@ def sanitize_for_branch(component: str) -> str:
 
 
 def make_temp_branch_name(stage_rel: Path, branch: str) -> str:
-    sanitized_stage = sanitize_for_branch(str(stage_rel))
+    stage_component = stage_rel.name
+    if stage_component in {"", "."}:
+        stage_component = "staging"
+    sanitized_stage = sanitize_for_branch(stage_component)
     sanitized_branch = sanitize_for_branch(branch)
     suffix = int(time.time())
     return f"{TEMP_BRANCH_PREFIX}/{sanitized_stage}-{sanitized_branch}-{suffix}"

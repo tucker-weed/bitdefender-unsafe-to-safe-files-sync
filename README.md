@@ -19,7 +19,8 @@ When you run `clone`, the script:
    branch that also exists on the remote (default remote name is `origin`).
 2. Pushes the current HEAD to a uniquely named temporary remote branch and
    bootstraps a matching repository under the staging root that tracks that
-   temporary branch.
+   temporary branch (the generated name is derived from the staging directory
+   itself rather than its full path).
 3. Records the mapping in `.staging_sync.json` so future syncs can find the
    right source and destination.
 
@@ -31,8 +32,8 @@ When you run `sync-back`, the script:
    the one created during `clone` unless you override it).
 3. Fast-forwards (or hard-resets with `--force`) the original work branch that
    the staging copy was based on (or a branch you specify with `--branch`).
-4. Pushes the updated branch back to the remote and cleans up the temporary
-   branch.
+4. Pushes the updated branch back to the remote and then deletes the temporary
+   branch on the remote before exiting.
 
 The `list` subcommand prints all recorded mappings from `.staging_sync.json`.
 
@@ -157,6 +158,19 @@ python3 stage_sync.py --work-root ~/code list
   if it is on a different branch.
 - `--force`: during `clone`, replaces the staging directory; during
   `sync-back`, performs a hard reset instead of a fast-forward merge.
+
+## Temporary Branch Lifecycle
+
+- Temporary branches are named `staging-sync/<staging-name>-<base-branch>-<timestamp>`,
+  so the staging directory name (not its path) is what shows up on the remote.
+- `sync-back` always publishes the staging work by pushing to that temporary
+  branch and then removes it remotely with `git push origin :refs/heads/<temp>`
+  in a `finally` block, even if the fast-forward or push fails.
+- The staging repository keeps its local branch so you can continue iterating,
+  and the next `sync-back` will re-create the remote branch automatically if it
+  was deleted.
+- There is no flag to skip the cleanup; use `--temp-branch` only to control the
+  name when you need to inspect the remote manually before the script finishes.
 
 ## Configuration File
 
