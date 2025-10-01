@@ -7,17 +7,18 @@ fast-forwarding the original working copy with the changes you made in staging.
 
 ## Workflow Overview
 
-The script assumes two sibling directories:
+You provide the script with two directories when running commands:
 
-- `work/` - contains your regular Git projects that you actively develop in.
-- `staging/` - contains throwaway staging copies managed by this script.
+- A **work root** (`--work-root`) that contains your canonical Git repositories.
+- A **staging root** (`--staging-root`, defaults to the directory containing this
+  script) that holds throwaway staging copies.
 
 When you run `clone`, the script:
 
-1. Ensures the target project inside `work/` exists, is clean, and is on a
+1. Ensures the target project inside the work root exists, is clean, and is on a
    branch that also exists on the remote (default remote name is `origin`).
-2. Creates (or replaces with `--force`) a matching repository under
-   `staging/`, adds the same remote, fetches the branch, and checks it out.
+2. Creates (or replaces with `--force`) a matching repository under the staging
+   root, adds the same remote, fetches the branch, and checks it out.
 3. Records the mapping in `.staging_sync.json` so future syncs can find the
    right source and destination.
 
@@ -37,22 +38,33 @@ The `list` subcommand prints all recorded mappings from `.staging_sync.json`.
 
 - Python 3.8 or newer.
 - Git available on your PATH.
-- A `work/` directory that contains Git repositories with a remote called
+- A work directory populated with Git repositories that share a remote named
   `origin`.
-- A `staging/` directory (this repository's root) containing `stage_sync.py`.
+- A staging directory containing this script, unless you provide an alternate
+  location via `--staging-root`.
 
 ## Usage
 
+Global options:
+
+- `--work-root PATH` (required) – path to your work directory.
+- `--staging-root PATH` – override the staging directory. Defaults to the
+  directory that contains `stage_sync.py`.
+- `--config-path PATH` – override where metadata is stored. Defaults to
+  `<staging-root>/.staging_sync.json`.
+
+Example commands:
+
 ```bash
-python3 stage_sync.py clone path/to/project            # under work/
-python3 stage_sync.py clone path/to/project --force    # replace existing staging copy
-python3 stage_sync.py clone path/to/project --as-name demo-stage
+python3 stage_sync.py --work-root /path/to/work clone project/in/work
+python3 stage_sync.py --work-root /path/to/work clone project/in/work --force
+python3 stage_sync.py --work-root /path/to/work clone project/in/work --as-name demo-stage
 
-python3 stage_sync.py sync-back demo-stage
-python3 stage_sync.py sync-back demo-stage --auto-checkout
-python3 stage_sync.py sync-back demo-stage --force
+python3 stage_sync.py --work-root /path/to/work sync-back demo-stage
+python3 stage_sync.py --work-root /path/to/work sync-back demo-stage --auto-checkout
+python3 stage_sync.py --work-root /path/to/work sync-back demo-stage --force
 
-python3 stage_sync.py list
+python3 stage_sync.py --work-root /path/to/work list
 ```
 
 ### Common Flags
@@ -68,9 +80,10 @@ python3 stage_sync.py list
 
 ## Configuration File
 
-The script stores per-staging metadata in `.staging_sync.json` in this
-directory. You usually do not need to edit this file manually; it keeps track
-of the last used branch, staging/work paths, and the temporary branch name.
+The script stores per-staging metadata in `.staging_sync.json` inside the
+staging root (or a custom path if you pass `--config-path`). You usually do not
+need to edit this file manually; it keeps track of the last used branch,
+staging/work paths, and the temporary branch name.
 
 ## Tips
 

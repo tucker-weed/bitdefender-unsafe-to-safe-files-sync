@@ -1,16 +1,19 @@
 #!/usr/bin/env python3
 import argparse
 import json
-import os
 import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+from typing import Optional
 
-STAGING_ROOT = Path(__file__).resolve().parent
-WORK_ROOT = (STAGING_ROOT.parent / "work").resolve()
-CONFIG_PATH = STAGING_ROOT / ".staging_sync.json"
+DEFAULT_STAGING_ROOT = Path(__file__).resolve().parent
+DEFAULT_CONFIG_NAME = ".staging_sync.json"
+
+STAGING_ROOT: Optional[Path] = None
+WORK_ROOT: Optional[Path] = None
+CONFIG_PATH: Optional[Path] = None
 DEFAULT_REMOTE = "origin"
 TEMP_BRANCH_PREFIX = "staging-sync"
 
@@ -36,6 +39,39 @@ def run_git(
     if capture_output:
         return result.stdout
     return result
+
+
+def configure_paths(
+    staging_root: Path,
+    work_root: Path,
+    config_path: Optional[Path] = None,
+) -> None:
+    global STAGING_ROOT, WORK_ROOT, CONFIG_PATH
+
+    STAGING_ROOT = staging_root.expanduser().resolve()
+    WORK_ROOT = work_root.expanduser().resolve()
+    if config_path is not None:
+        CONFIG_PATH = config_path.expanduser().resolve()
+    else:
+        CONFIG_PATH = STAGING_ROOT / DEFAULT_CONFIG_NAME
+
+
+def get_staging_root() -> Path:
+    if STAGING_ROOT is None:
+        fail("Staging root not configured. Provide --staging-root.")
+    return STAGING_ROOT
+
+
+def get_work_root() -> Path:
+    if WORK_ROOT is None:
+        fail("Work root not configured. Provide --work-root.")
+    return WORK_ROOT
+
+
+def get_config_path() -> Path:
+    if CONFIG_PATH is None:
+        fail("Configuration path not initialized. Provide --staging-root or --config-path.")
+    return CONFIG_PATH
 
 
 def resolve_under_root(base: Path, path_candidate, label: str) -> Path:
@@ -97,16 +133,18 @@ def ensure_branch_on_remote(path: Path, branch: str, remote: str) -> None:
 
 
 def load_config() -> dict:
-    if CONFIG_PATH.exists():
+    config_path = get_config_path()
+    if config_path.exists():
         try:
-            return json.loads(CONFIG_PATH.read_text())
+            return json.loads(config_path.read_text())
         except json.JSONDecodeError as exc:
-            fail(f"Configuration file {CONFIG_PATH} is not valid JSON: {exc}.")
+            fail(f"Configuration file {config_path} is not valid JSON: {exc}.")
     return {"projects": {}}
 
 
 def save_config(config: dict) -> None:
-    CONFIG_PATH.write_text(json.dumps(config, indent=2, sort_keys=True))
+    config_path = get_config_path()
+    config_path.write_text(json.dumps(config, indent=2, sort_keys=True))
 
 
 def init_staging_repo(stage_path: Path, remote_url: str, branch: str) -> None:
@@ -140,11 +178,14 @@ def make_temp_branch_name(stage_rel: Path, branch: str) -> str:
 
 
 def clone_project(args) -> None:
-    if not WORK_ROOT.exists():
-        fail(f"Expected work directory at {WORK_ROOT}, but it does not exist.")
+    work_root = get_work_root()
+    staging_root = get_staging_root()
+
+    if not work_root.exists():
+        fail(f"Expected work directory at {work_root}, but it does not exist.")
 
     project_rel = Path(args.project)
-    source = resolve_under_root(WORK_ROOT, project_rel, "Project path")
+    source = resolve_under_root(work_root, project_rel, "Project path")
     if not source.exists():
         fail(f"Source project {source} does not exist.")
     if not source.is_dir():
@@ -157,7 +198,7 @@ def clone_project(args) -> None:
     ensure_branch_on_remote(source, branch, DEFAULT_REMOTE)
 
     target_name = args.as_name or project_rel.name
-    target = resolve_under_root(STAGING_ROOT, target_name, "Staging target")
+    target = resolve_under_root(staging_root, target_name, "Staging target")
     if target.exists():
         if not args.force:
             fail(
@@ -175,7 +216,7 @@ def clone_project(args) -> None:
 
     config = load_config()
     config.setdefault("projects", {})
-    config["projects"][str(Path(target).relative_to(STAGING_ROOT))] = {
+    config["projects"][str(Path(target).relative_to(staging_root))] = {
         "work_name": str(project_rel),
         "work_path": str(source),
         "staging_path": str(target),
@@ -188,7 +229,10 @@ def clone_project(args) -> None:
 
 def sync_back(args) -> None:
     stage_rel = Path(args.staging_name)
-    stage_path = resolve_under_root(STAGING_ROOT, stage_rel, "Staging path")
+    staging_root = get_staging_root()
+    work_root = get_work_root()
+
+    stage_path = resolve_under_root(staging_root, stage_rel, "Staging path")
     if not stage_path.exists():
         fail(f"Staging project {stage_path} does not exist.")
     ensure_git_repo(stage_path, f"Staging project {stage_path}")
@@ -197,13 +241,13 @@ def sync_back(args) -> None:
     entry = config.get("projects", {}).get(str(stage_rel))
 
     if args.work_name:
-        work_path = resolve_under_root(WORK_ROOT, Path(args.work_name), "Work path")
+        work_path = resolve_under_root(work_root, Path(args.work_name), "Work path")
         work_label = args.work_name
     elif entry:
         work_path = Path(entry["work_path"])
         work_label = entry.get("work_name", work_path.name)
     else:
-        work_path = resolve_under_root(WORK_ROOT, stage_rel.name, "Work path")
+        work_path = resolve_under_root(work_root, stage_rel.name, "Work path")
         work_label = stage_rel.name
 
     if not work_path.exists():
@@ -357,13 +401,31 @@ def main() -> None:
     parser = argparse.ArgumentParser(
         description="Manage staging copies of local git projects using a shared remote."
     )
+    parser.add_argument(
+        "--staging-root",
+        help=(
+            "Path to the staging root directory. Defaults to the directory "
+            "containing this script."
+        ),
+    )
+    parser.add_argument(
+        "--work-root",
+        help="Path to the work directory that contains your source repositories.",
+    )
+    parser.add_argument(
+        "--config-path",
+        help=(
+            "Location of the metadata JSON file. Defaults to "
+            f"<staging-root>/{DEFAULT_CONFIG_NAME}."
+        ),
+    )
     subparsers = parser.add_subparsers(dest="command")
 
     clone_parser = subparsers.add_parser(
         "clone", help="Prepare a staging repository for a project"
     )
     clone_parser.add_argument(
-        "project", help="Project path (relative to the work directory)"
+        "project", help="Project path (relative to the configured work directory)"
     )
     clone_parser.add_argument(
         "--as-name", help="Name to use for the staging copy. Defaults to the project name."
@@ -417,6 +479,19 @@ def main() -> None:
     if not args.command:
         parser.print_help()
         sys.exit(1)
+
+    staging_root_input = Path(args.staging_root).expanduser() if args.staging_root else DEFAULT_STAGING_ROOT
+    work_root_input = args.work_root
+    if work_root_input is None:
+        fail("--work-root is required. Provide the path to your work directory.")
+    work_root_path = Path(work_root_input).expanduser()
+
+    config_path_input = args.config_path
+    config_path_path = (
+        Path(config_path_input).expanduser() if config_path_input else None
+    )
+
+    configure_paths(staging_root_input, work_root_path, config_path_path)
 
     try:
         args.func(args)
