@@ -1,0 +1,17 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "stage-sync"
+version = "0.1.0"
+description = "Utility for staging Git repositories and syncing them back to their work copies."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = []
+
+[project.scripts]
+stage-sync = "stage_sync:main"
+
+[tool.setuptools]
+py-modules = ["stage_sync"]
