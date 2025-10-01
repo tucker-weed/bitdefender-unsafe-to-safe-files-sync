@@ -10,8 +10,8 @@ fast-forwarding the original working copy with the changes you made in staging.
 You provide the script with two directories when running commands:
 
 - A **work root** (`--work-root`) that contains your canonical Git repositories.
-- A **staging root** (`--staging-root`, defaults to the directory containing this
-  script) that holds throwaway staging copies.
+- A **staging root** (`--staging-root`, defaults to the directory you launch the
+  command from) that holds throwaway staging copies.
 
 When you run `clone`, the script:
 
@@ -66,7 +66,7 @@ Global options:
 
 - `--work-root PATH` (required) – path to your work directory.
 - `--staging-root PATH` – override the staging directory. Defaults to the
-  directory that contains `stage_sync.py`.
+  current working directory when you run the command.
 - `--config-path PATH` – override where metadata is stored. Defaults to
   `<staging-root>/.staging_sync.json`.
 

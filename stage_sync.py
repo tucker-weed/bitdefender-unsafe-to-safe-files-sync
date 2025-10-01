@@ -8,8 +8,12 @@ import time
 from pathlib import Path
 from typing import Optional
 
-DEFAULT_STAGING_ROOT = Path(__file__).resolve().parent
 DEFAULT_CONFIG_NAME = ".staging_sync.json"
+
+
+def determine_default_staging_root() -> Path:
+    """Return the directory the CLI was launched from."""
+    return Path.cwd().resolve()
 
 STAGING_ROOT: Optional[Path] = None
 WORK_ROOT: Optional[Path] = None
@@ -482,8 +486,8 @@ def main() -> None:
     parser.add_argument(
         "--staging-root",
         help=(
-            "Path to the staging root directory. Defaults to the directory "
-            "containing this script."
+            "Path to the staging root directory. Defaults to the current "
+            "working directory."
         ),
     )
     parser.add_argument(
@@ -562,7 +566,12 @@ def main() -> None:
         parser.print_help()
         sys.exit(1)
 
-    staging_root_input = Path(args.staging_root).expanduser() if args.staging_root else DEFAULT_STAGING_ROOT
+    default_staging_root = determine_default_staging_root()
+    staging_root_input = (
+        Path(args.staging_root).expanduser().resolve()
+        if args.staging_root
+        else default_staging_root
+    )
     work_root_input = args.work_root
     if work_root_input is None:
         fail("--work-root is required. Provide the path to your work directory.")
