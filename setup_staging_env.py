@@ -83,6 +83,10 @@ def main() -> None:
 
     staging_dir.mkdir(parents=True, exist_ok=True)
 
+    # Ensure setuptools metadata directory exists away from project root for AV compatibility
+    build_dir = project_root / "build"
+    build_dir.mkdir(parents=True, exist_ok=True)
+
     if venv_path.exists():
         if not args.force:
             fail(
