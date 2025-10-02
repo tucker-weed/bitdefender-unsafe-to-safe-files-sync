@@ -103,8 +103,10 @@ throwaway staging checkout now lives at `<staging-root>/demo-stage/`.
 
 ### `sync-back`
 
-Push the staging work to the remote temporary branch and fast-forward (or hard
-reset) the work repository so it matches.
+Publish the staging work to the remote temporary branch and refresh the work
+repository's local copy of that temporary branch. Pass `--promote` to fast-
+forward (or hard reset) the original work branch so it matches the staging
+changes.
 
 ```bash
 python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back demo-stage
@@ -118,10 +120,12 @@ created during `clone` (either the default project name or the value passed to
   metadata file.
 - If you cloned without `--as-name`, use the project path itself (for example,
   `sync-back apps/backend`).
-- Use `--auto-checkout` if your work repository is on another branch and you
-want the script to switch branches for you.
-- Use `--force` to hard reset the work repository instead of performing a
-fast-forward merge.
+- Add `--promote` when you want to fast-forward the work branch to the staging
+changes.
+- Combine `--promote` with `--auto-checkout` if your work repository is on
+another branch and you want the script to switch branches for you.
+- Use `--force` with `--promote` to hard reset the work repository instead of
+performing a fast-forward merge.
 
 If your work repository uses a different name than the staging directory, pass
 `--work-name` so the script knows which repository to fast-forward:
@@ -144,8 +148,9 @@ python3 stage_sync.py --staging-root ~/staging --work-root ~/code clone apps/bac
 
 # Push changes from staging back to the work tree
 python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back apps/backend
-python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back demo-stage --auto-checkout
-python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back demo-stage --force
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back demo-stage --promote
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back demo-stage --promote --auto-checkout
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back demo-stage --promote --force
 
 # Inspect recorded mappings
 python3 stage_sync.py --staging-root ~/staging --work-root ~/code list
@@ -155,12 +160,16 @@ python3 stage_sync.py --staging-root ~/staging --work-root ~/code list
 
 - `--allow-dirty-stage`, `--allow-dirty-work`: bypass clean working tree
   checks (use sparingly).
-- `--branch`: choose which work branch should receive the staged changes.
+- `--branch`: choose which work branch should receive the staged changes (used
+  when promoting).
 - `--temp-branch`: override the generated temporary remote branch name.
-- `--auto-checkout`: switch the work repo to the target branch automatically
-  if it is on a different branch.
+- `--promote`: apply the temporary branch to the work branch and push it back
+  to the remote.
+- `--auto-checkout`: when promoting, switch the work repo to the target branch
+  automatically if it is on a different branch.
 - `--force`: during `clone`, replaces the staging directory; during
-  `sync-back`, performs a hard reset instead of a fast-forward merge.
+  `sync-back`, performs a hard reset instead of a fast-forward merge when used
+  with `--promote`.
 
 ## Temporary Branch Lifecycle
 
