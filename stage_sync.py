@@ -300,10 +300,25 @@ def clone_project(args) -> None:
         capture_output=False,
     )
 
-    print(
-        f"Initializing staging repository at {target} from remote branch {temp_branch} (based on {branch})."
-    )
-    init_staging_repo(target, remote_url, temp_branch, temp_branch)
+    try:
+        print(
+            f"Initializing staging repository at {target} from remote branch {temp_branch} (based on {branch})."
+        )
+        init_staging_repo(target, remote_url, temp_branch, temp_branch)
+    finally:
+        print(f"Removing temporary remote branch {temp_branch} created during clone")
+        try:
+            run_git(
+                source,
+                ["push", DEFAULT_REMOTE, f":refs/heads/{temp_branch}"],
+                capture_output=False,
+            )
+        except subprocess.CalledProcessError as exc:
+            warning = exc.stderr or exc.stdout or str(exc)
+            print(
+                f"Warning: failed to delete temporary branch {temp_branch} after clone.\n{warning}",
+                file=sys.stderr,
+            )
 
     config = load_config()
     config.setdefault("projects", {})

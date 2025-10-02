@@ -90,6 +90,8 @@ python3 stage_sync.py --staging-root ~/staging --work-root ~/code clone apps/bac
   different name with `--as-name`.
 - Use `--force` if you want to replace an existing staging copy with a fresh
   clone.
+- The temporary remote branch used to seed the staging checkout is deleted as
+  soon as cloning finishes; the local staging branch remains intact.
 
 `demo-stage` in the examples below is just a friendly name for the staging
 directory:
@@ -175,6 +177,8 @@ python3 stage_sync.py --staging-root ~/staging --work-root ~/code list
 
 - Temporary branches are named `staging-sync/<staging-name>-<base-branch>-<timestamp>`,
   so the staging directory name (not its path) is what shows up on the remote.
+- `clone` creates the temporary branch only long enough to populate the staging
+  checkout, then removes it from the remote immediately.
 - `sync-back` always publishes the staging work by pushing to that temporary
   branch and then removes it remotely with `git push origin :refs/heads/<temp>`
   in a `finally` block, even if the fast-forward or push fails.
