@@ -8,6 +8,9 @@ import subprocess
 import sys
 from pathlib import Path
 
+
+sys.dont_write_bytecode = True
+
 DEFAULT_VENV_NAME = ".venv"
 
 
@@ -41,6 +44,48 @@ def run_uv(uv_path: str, *args: str) -> None:
     result = subprocess.run(cmd, text=True)
     if result.returncode != 0:
         fail(f"uv command failed: {' '.join(cmd)}")
+
+
+def get_site_packages(python_exe: Path) -> Path:
+    code = "import sysconfig; print(sysconfig.get_path('purelib'))"
+    result = subprocess.run(
+        [str(python_exe), "-c", code],
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        fail(
+            "Unable to determine site-packages directory inside the virtual environment."
+        )
+    path = Path(result.stdout.strip())
+    if not path:
+        fail("site-packages path is empty for the virtual environment.")
+    return path
+
+
+def install_stage_sync(python_in_venv: Path, venv_path: Path, project_root: Path) -> None:
+    module_source = project_root / "stage_sync.py"
+    if not module_source.exists():
+        fail(f"stage_sync.py not found in {project_root}.")
+
+    site_packages = get_site_packages(python_in_venv)
+    site_packages.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(module_source, site_packages / "stage_sync.py")
+
+    bin_dir = venv_path / "bin"
+    if not bin_dir.exists():
+        bin_dir = venv_path / "Scripts"
+
+    bin_dir.mkdir(parents=True, exist_ok=True)
+    script_path = bin_dir / "stage-sync"
+    script_contents = (
+        "#!/usr/bin/env python3\n"
+        "from stage_sync import main\n\n"
+        "if __name__ == '__main__':\n"
+        "    main()\n"
+    )
+    script_path.write_text(script_contents)
+    script_path.chmod(0o755)
 
 
 def create_parser() -> argparse.ArgumentParser:
@@ -83,10 +128,6 @@ def main() -> None:
 
     staging_dir.mkdir(parents=True, exist_ok=True)
 
-    # Ensure setuptools metadata directory exists away from project root for AV compatibility
-    build_dir = project_root / "build"
-    build_dir.mkdir(parents=True, exist_ok=True)
-
     if venv_path.exists():
         if not args.force:
             fail(
@@ -98,7 +139,7 @@ def main() -> None:
     run_uv(uv_path, "venv", str(venv_path))
 
     python_in_venv = venv_python_path(venv_path)
-    run_uv(uv_path, "pip", "install", "--python", str(python_in_venv), str(project_root))
+    install_stage_sync(python_in_venv, venv_path, project_root)
 
     print("Virtual environment ready.")
     print(f"Location: {venv_path}")

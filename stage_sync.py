@@ -12,8 +12,12 @@ DEFAULT_CONFIG_NAME = ".staging_sync.json"
 
 
 def determine_default_staging_root() -> Path:
-    """Return the directory the CLI was launched from."""
-    return Path.cwd().resolve()
+    """Return the directory most likely to be the staging root."""
+    cwd = Path.cwd().resolve()
+    for path in (cwd, *cwd.parents):
+        if (path / DEFAULT_CONFIG_NAME).exists():
+            return path
+    return cwd
 
 STAGING_ROOT: Optional[Path] = None
 WORK_ROOT: Optional[Path] = None
@@ -270,17 +274,20 @@ def clone_project(args) -> None:
 
 
 def sync_back(args) -> None:
-    stage_rel = Path(args.staging_name)
+    stage_input = Path(args.staging_name)
     staging_root = get_staging_root()
     work_root = get_work_root()
 
-    stage_path = resolve_under_root(staging_root, stage_rel, "Staging path")
+    stage_path = resolve_under_root(staging_root, stage_input, "Staging path")
     if not stage_path.exists():
         fail(f"Staging project {stage_path} does not exist.")
     ensure_git_repo(stage_path, f"Staging project {stage_path}")
 
+    stage_rel = stage_path.relative_to(staging_root)
+    stage_rel_key = str(stage_rel)
+
     config = load_config()
-    entry = config.get("projects", {}).get(str(stage_rel))
+    entry = config.get("projects", {}).get(stage_rel_key)
 
     if args.work_name:
         work_path = resolve_under_root(work_root, Path(args.work_name), "Work path")
@@ -297,13 +304,11 @@ def sync_back(args) -> None:
     ensure_git_repo(work_path, f"Work project {work_path}")
 
     if not args.allow_dirty_stage:
-        ensure_clean(stage_path, f"Staging project {stage_rel}")
+        ensure_clean(stage_path, f"Staging project {stage_path}")
     if not args.allow_dirty_work:
         ensure_clean(work_path, f"Work project {work_label}")
 
-    staging_branch = get_current_branch(
-        stage_path, f"Staging project {stage_rel}"
-    )
+    staging_branch = get_current_branch(stage_path, f"Staging project {stage_path}")
 
     stored_base_branch = entry.get("base_branch") if entry else None
     recorded_temp_branch = entry.get("temp_branch") if entry else None
@@ -453,7 +458,7 @@ def sync_back(args) -> None:
         "temp_branch": temp_branch,
         "last_temp_branch": temp_branch,
     }
-    config["projects"][str(stage_rel)] = config_entry
+    config["projects"][stage_rel_key] = config_entry
     save_config(config)
     print(
         f"Sync complete. Work project {work_path} now contains origin/{target_branch} from staging."

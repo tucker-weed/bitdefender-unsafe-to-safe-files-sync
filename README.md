@@ -82,7 +82,7 @@ Prepare a fresh staging checkout that tracks a temporary branch on the shared
 remote. Typical usage looks like this:
 
 ```bash
-python3 stage_sync.py --work-root ~/code clone apps/backend
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code clone apps/backend
 ```
 
 - `apps/backend` is the repository inside the work root you want to stage.
@@ -95,7 +95,7 @@ python3 stage_sync.py --work-root ~/code clone apps/backend
 directory:
 
 ```bash
-python3 stage_sync.py --work-root ~/code clone apps/backend --as-name demo-stage
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code clone apps/backend --as-name demo-stage
 ```
 
 That command keeps your original repository at `~/code/apps/backend/`, but the
@@ -107,12 +107,15 @@ Push the staging work to the remote temporary branch and fast-forward (or hard
 reset) the work repository so it matches.
 
 ```bash
-python3 stage_sync.py --work-root ~/code sync-back demo-stage
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back demo-stage
 ```
 
 - `demo-stage` must match the directory name under the staging root that you
 created during `clone` (either the default project name or the value passed to
 `--as-name`).
+- You can pass `--staging-root` here (and on any command) if you are running
+  the CLI from outside the staging directory so it can find the correct
+  metadata file.
 - If you cloned without `--as-name`, use the project path itself (for example,
   `sync-back apps/backend`).
 - Use `--auto-checkout` if your work repository is on another branch and you
@@ -124,7 +127,7 @@ If your work repository uses a different name than the staging directory, pass
 `--work-name` so the script knows which repository to fast-forward:
 
 ```bash
-python3 stage_sync.py --work-root ~/code sync-back demo-stage --work-name apps/backend
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back demo-stage --work-name apps/backend
 ```
 
 ### `list`
@@ -135,17 +138,17 @@ Example commands:
 
 ```bash
 # Create or refresh the staging copy
-python3 stage_sync.py --work-root ~/code clone apps/backend
-python3 stage_sync.py --work-root ~/code clone apps/backend --force
-python3 stage_sync.py --work-root ~/code clone apps/backend --as-name demo-stage
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code clone apps/backend
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code clone apps/backend --force
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code clone apps/backend --as-name demo-stage
 
 # Push changes from staging back to the work tree
-python3 stage_sync.py --work-root ~/code sync-back apps/backend
-python3 stage_sync.py --work-root ~/code sync-back demo-stage --auto-checkout
-python3 stage_sync.py --work-root ~/code sync-back demo-stage --force
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back apps/backend
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back demo-stage --auto-checkout
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code sync-back demo-stage --force
 
 # Inspect recorded mappings
-python3 stage_sync.py --work-root ~/code list
+python3 stage_sync.py --staging-root ~/staging --work-root ~/code list
 ```
 
 ### Common Flags
