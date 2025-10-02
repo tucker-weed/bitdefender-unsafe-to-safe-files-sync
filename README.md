@@ -48,18 +48,32 @@ The `list` subcommand prints all recorded mappings from `.staging_sync.json`.
 
 ## Bootstrapping with uv
 
-Use `setup_staging_env.py` to create a virtual environment inside a staging
-directory and install this package into it with [`uv`](https://docs.astral.sh/uv/):
+Run `setup_staging_env.py` from the repository root to provision a local
+virtual environment with [`uv`](https://docs.astral.sh/uv/):
 
 ```bash
-python3 setup_staging_env.py /path/to/staging
+python3 setup_staging_env.py
 ```
 
-The script creates `/path/to/staging/.venv` by default and installs the
-`stage-sync` console entrypoint. Pass `--force` to recreate an existing
-environment or `--venv-name` to choose a different virtualenv directory name.
-After the command completes, activate the environment and run `stage-sync` as
-usual, providing `--staging-root /path/to/staging` when running commands.
+This creates `./.venv` in the current directory if it does not already exist.
+Pass `--force` when you want to recreate the environment. Use `--uv-path` if
+`uv` is not on your `PATH`.
+
+Need to refresh the virtual environment with the latest `stage_sync.py`, just
+like the original workflow? Add `--spawn-terminal` and supply the staging
+directory where you want to land. The flag force-recreates the virtual
+environment, installs the `stage-sync` wrapper into it, and then opens a new
+Terminal window rooted at the provided directory with the environment activated
+(macOS only):
+
+```bash
+python3 setup_staging_env.py ~/staging/worktree --spawn-terminal
+```
+
+The spawned shell runs `source ~/.zshrc` followed by
+`source ./.venv/bin/activate`, so the freshly installed `stage-sync`
+entrypoint is immediately available. Use this flow after editing
+`stage_sync.py` to pick up your changes before running the CLI.
 
 ## Usage
 

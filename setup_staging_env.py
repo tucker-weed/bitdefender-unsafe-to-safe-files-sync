@@ -7,6 +7,8 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from textwrap import dedent
+import shlex
 
 
 sys.dont_write_bytecode = True
@@ -91,18 +93,17 @@ def install_stage_sync(python_in_venv: Path, venv_path: Path, project_root: Path
 def create_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
-            "Create a uv virtual environment inside a staging directory and install "
-            "the staging sync utility into it."
+            "Create or refresh a uv virtual environment in the current directory. "
+            "Optionally recreate it with stage-sync installed and launch a staging shell."
         )
     )
     parser.add_argument(
-        "staging_dir",
-        help="Directory that should contain the virtual environment (will be created if needed).",
-    )
-    parser.add_argument(
-        "--venv-name",
-        default=DEFAULT_VENV_NAME,
-        help=f"Name of the virtual environment directory (default: {DEFAULT_VENV_NAME}).",
+        "staging_target",
+        nargs="?",
+        help=(
+            "Directory to open in a new terminal when using --spawn-terminal. "
+            "Required whenever --spawn-terminal is set."
+        ),
     )
     parser.add_argument(
         "--force",
@@ -113,37 +114,99 @@ def create_parser() -> argparse.ArgumentParser:
         "--uv-path",
         help="Path to the uv executable if it is not on PATH.",
     )
+    parser.add_argument(
+        "--spawn-terminal",
+        action="store_true",
+        help=(
+            "Recreate the virtual environment, install stage-sync into it, and "
+            "spawn a new Terminal window rooted at the staging target with the "
+            "environment activated."
+        ),
+    )
     return parser
+
+
+def activation_script(venv_path: Path) -> Path:
+    candidate = venv_path / "bin" / "activate"
+    if candidate.exists():
+        return candidate
+    candidate = venv_path / "Scripts" / "activate"
+    if candidate.exists():
+        return candidate
+    fail(f"Unable to locate activation script inside {venv_path}.")
+
+
+def spawn_staging_shell(staging_dir: Path, venv_path: Path) -> None:
+    if sys.platform != "darwin":
+        fail("--spawn-terminal is currently supported only on macOS (darwin).")
+
+    activation = activation_script(venv_path)
+    commands = [
+        f"cd {shlex.quote(str(staging_dir))}",
+        "source ~/.zshrc",
+        f"source {shlex.quote(str(activation))}",
+    ]
+    joined = "; ".join(commands)
+    applescript_command = joined.replace("\\", "\\\\").replace("\"", "\\\"")
+    script = dedent(
+        f"""
+        tell application "Terminal"
+            activate
+            do script "{applescript_command}"
+        end tell
+        """
+    ).strip()
+
+    result = subprocess.run(["osascript", "-e", script], text=True)
+    if result.returncode != 0:
+        fail("Failed to spawn Terminal window via osascript.")
 
 
 def main() -> None:
     parser = create_parser()
     args = parser.parse_args()
 
-    staging_dir = Path(args.staging_dir).expanduser().resolve()
-    venv_path = staging_dir / args.venv_name
+    current_dir = Path.cwd()
+    venv_path = current_dir / DEFAULT_VENV_NAME
     project_root = Path(__file__).resolve().parent
 
     uv_path = locate_uv(args.uv_path)
 
-    staging_dir.mkdir(parents=True, exist_ok=True)
+    if args.spawn_terminal:
+        staging_target = args.staging_target
+        if not staging_target:
+            fail("--spawn-terminal requires a staging_target path argument.")
+        staging_target_path = Path(staging_target).expanduser().resolve()
+        staging_target_path.mkdir(parents=True, exist_ok=True)
+
+        if venv_path.exists():
+            shutil.rmtree(venv_path)
+
+        run_uv(uv_path, "venv", str(venv_path))
+        python_in_venv = venv_python_path(venv_path)
+        install_stage_sync(python_in_venv, venv_path, project_root)
+
+        spawn_staging_shell(staging_target_path, venv_path)
+        print("Virtual environment refreshed and stage-sync installed.")
+        print(f"Location: {venv_path}")
+        return
 
     if venv_path.exists():
-        if not args.force:
-            fail(
-                f"Virtual environment already exists at {venv_path}. "
-                "Use --force to replace it."
-            )
-        shutil.rmtree(venv_path)
+        if args.force:
+            shutil.rmtree(venv_path)
+        else:
+            message = dedent(
+                f"""
+                Virtual environment already exists at {venv_path}.
+                Use --force to recreate it or --spawn-terminal to refresh with stage-sync.
+                """
+            ).strip()
+            print(message)
+            return
 
     run_uv(uv_path, "venv", str(venv_path))
-
-    python_in_venv = venv_python_path(venv_path)
-    install_stage_sync(python_in_venv, venv_path, project_root)
-
     print("Virtual environment ready.")
     print(f"Location: {venv_path}")
-    print("Activate it and run 'stage-sync --help' to get started.")
 
 
 if __name__ == "__main__":
